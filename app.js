@@ -39,13 +39,120 @@ function renderSettings(el){let total=state.media.reduce((s,m)=>s+(m.blob?.size|
 function selectClips(tid,mode,query){let arr=tripMedia(tid);if(mode==='custom'&&query.trim()){let words=query.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').split(/[^a-z0-9]+/).filter(w=>w.length>=3&&!['video','foto','reel','crea','fammi','vorrei','secondi','visita','della','delle','degli','dello','tutti','delle','dopo','quello','questa','questa','momenti','migliori','bello'].includes(w));let found=arr.filter(m=>words.some(w=>`${m.note} ${m.name}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').includes(w)));if(found.length)arr=found;else return {clips:[],problem:'Nessun file corrisponde alle parole chiave. Aggiungi etichette ai ricordi nella galleria per cercarli in modo preciso.'}}
 if(mode==='surprise'){// Group by day, favor mixed media; no claims of visual AI
 let groups=new Map();for(let m of arr){let key=(m.takenAt||'').slice(0,10);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(m)};let best=[...groups.values()].sort((a,b)=>b.length-a.length)[0]||[];arr=best.length>=3?best:arr}
-let cap=Math.max(2,Math.round(state.duration/2.7));let step=Math.max(1,Math.ceil(arr.length/cap));return {clips:arr.filter((_,i)=>i%step===0).slice(0,cap),problem:''}}
-function renderStudio(el){let trips=state.trips;let active=trips.find(x=>x.id===state.studioTrip)||trips[0];if(active)state.studioTrip=active.id;el.innerHTML=`<section class="hero"><div class="eyebrow">YOUR CREATIVE SPACE</div><h1>Studio<span class="highlight">.</span></h1><p class="muted">Trasforma i ricordi in un breve montaggio verticale. Nessun video viene inviato a un server.</p></section>${!trips.length?`<div class="empty">Prima crea un viaggio e importa delle fotografie. <br><br><button class="btn" id="go-home">Vai ai viaggi</button></div>`:`<div class="studio-layout"><div class="card"><h2>Crea il tuo Reel</h2><div class="field"><label>Viaggio</label><select id="studio-trip">${trips.map(t=>`<option value="${esc(t.id)}" ${active?.id===t.id?'selected':''}>${esc(t.name)} · ${t.year}</option>`).join('')}</select></div><div class="field"><label>Modalità</label><div class="chips"><button class="chip ${state.mode==='surprise'?'active':''}" data-mode="surprise">✧ Stupiscimi</button><button class="chip ${state.mode==='custom'?'active':''}" data-mode="custom">☷ Personalizza</button></div></div><div class="field"><label>Durata · ${state.duration} secondi</label><input id="duration" type="range" min="10" max="60" step="5" value="${state.duration}"></div>${state.mode==='custom'?`<div class="field"><label>Descrivi il tuo Reel (ricerca per etichette e nomi, non chat AI)</label><textarea id="query" placeholder="Es. tempio, spiaggia, tramonto...">${esc(state.query)}</textarea></div>`:''}<button class="btn" id="generate">✧ Prepara montaggio</button><p class="hint">La modalità Stupiscimi oggi sceglie una giornata ricca di file e ne monta un campione. Non effettua ancora riconoscimento visivo con AI.</p><div id="sequence-list"></div></div><div><div class="preview"><canvas id="reel-canvas" width="540" height="960" aria-label="Anteprima reel"></canvas></div><div class="toolbar"><button class="btn secondary" id="play" disabled>▶ Anteprima</button><button class="btn" id="export" disabled>↓ Esporta video</button></div><div class="renderstatus" id="render-status">Prepara un montaggio per visualizzare l'anteprima.</div><p class="notice warning">Esportazione sperimentale: WebM, solo se il browser supporta Canvas Capture e MediaRecorder. Su Safari iPhone potrebbe non funzionare. Non è ancora disponibile l'esportazione MP4 garantita.</p></div></div>`}`;if(!trips.length){$('#go-home').onclick=()=>go();return}$('#studio-trip').onchange=e=>{state.studioTrip=e.target.value;state.sequence=[];render()};el.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{state.mode=b.dataset.mode;render()});$('#duration').oninput=e=>{state.duration=+e.target.value;$('#duration').previousElementSibling.textContent='Durata · '+state.duration+' secondi';};$('#duration').onchange=()=>render();$('#query')?.addEventListener('input',e=>state.query=e.target.value);$('#generate').onclick=()=>{let r=selectClips(state.studioTrip,state.mode,state.query);state.sequence=r.clips;if(r.problem){alert(r.problem);return}if(!r.clips.length){alert('Importa prima foto o video nel viaggio.');return}updateSequence();showPoster()};$('#play').onclick=()=>playSequence(false);$('#export').onclick=()=>playSequence(true);showPoster();updateSequence()}
-function updateSequence(){let target=$('#sequence-list');if(!target)return;target.innerHTML=state.sequence.length?`<h3 style="margin-top:22px">Montaggio proposto (${state.sequence.length} clip)</h3><p class="hint">Puoi eliminare singole clip dal montaggio.</p>${state.sequence.map((m,i)=>`<div class="listrow"><span>${i+1}. ${esc(m.name.slice(0,29))}</span><button class="chip" data-remove="${esc(m.id)}">×</button></div>`).join('')}`:'';target.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>{state.sequence=state.sequence.filter(m=>m.id!==b.dataset.remove);updateSequence();showPoster()});let can=state.sequence.length>0;$('#play').disabled=!can;$('#export').disabled=!can}
-function drawFrame(ctx,mediaObj,text,sub){let c=ctx.canvas,w=c.width,h=c.height;ctx.fillStyle='#10222a';ctx.fillRect(0,0,w,h);if(mediaObj&&(mediaObj.tagName==='IMG'?mediaObj.complete&&mediaObj.naturalWidth>0:mediaObj.readyState>=2)){let iw=mediaObj.videoWidth||mediaObj.naturalWidth,ih=mediaObj.videoHeight||mediaObj.naturalHeight;if(iw&&ih){let scale=Math.max(w/iw,h/ih),dw=iw*scale,dh=ih*scale;ctx.drawImage(mediaObj,(w-dw)/2,(h-dh)/2,dw,dh)}}let gradient=ctx.createLinearGradient(0,h*.7,0,h);gradient.addColorStop(0,'#0000');gradient.addColorStop(1,'#000c');ctx.fillStyle=gradient;ctx.fillRect(0,h*.65,w,h*.35);ctx.fillStyle='#f1f7ed';ctx.textAlign='center';ctx.font='700 34px system-ui';ctx.fillText(text.slice(0,22),w/2,h-110);ctx.font='23px system-ui';ctx.fillStyle='#def3cb';ctx.fillText(sub.slice(0,34),w/2,h-65)}
-async function mediaElement(m){let u=objectURL(m),el;if(m.kind==='video'){el=document.createElement('video');el.src=u;el.muted=true;el.playsInline=true;el.preload='auto';await new Promise((resolve,reject)=>{el.onloadeddata=resolve;el.onerror=()=>reject(Error('Video non leggibile'));setTimeout(()=>reject(Error('Timeout video')),15000)})}else{el=new Image();el.src=u;await el.decode()}return el}
-async function showPoster(){let c=$('#reel-canvas');if(!c)return;let ctx=c.getContext('2d');ctx.fillStyle='#203b40';ctx.fillRect(0,0,c.width,c.height);if(!state.sequence.length){drawFrame(ctx,null,'R3ELIO','Your memories in motion');return}try{let x=await mediaElement(state.sequence[0]);drawFrame(ctx,x,'R3ELio.',state.sequence[0].note||'Your memories');if(x.tagName==='VIDEO')x.pause()}catch{drawFrame(ctx,null,'R3ELio.','Anteprima non disponibile')}}
-async function playSequence(exporting){if(state.exporting)return;if(!state.sequence.length)return;let c=$('#reel-canvas');if(!c)return;let ctx=c.getContext('2d'),status=$('#render-status'),clips=[...state.sequence],duration=state.duration,stream=null,recorder=null,chunks=[];state.exporting=true;$('#play').disabled=true;$('#export').disabled=true;let failed=[];try{if(exporting){if(!c.captureStream||!window.MediaRecorder)throw Error('Questo browser non supporta l’esportazione video. Prova da Chrome/Edge su computer.');let mime=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(m=>MediaRecorder.isTypeSupported(m));if(!mime)throw Error('Esportazione WebM non supportata da questo browser.');stream=c.captureStream(25);recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:3000000});recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};recorder.start(500)}let per=duration/clips.length;for(let i=0;i<clips.length;i++){let m=clips[i],el;try{el=await mediaElement(m)}catch(err){failed.push(m.name);continue}if(el.tagName==='VIDEO'){try{el.currentTime=0;await el.play()}catch{failed.push(m.name);continue}}let start=performance.now(),limit=per*1000;do{let elapsed=performance.now()-start,remaining=limit-elapsed;drawFrame(ctx,el,'R3ELio.',m.note||m.name.replace(/\.[^.]+$/,''));status.textContent=`${exporting?'Esportazione':'Anteprima'}: clip ${i+1}/${clips.length} · ${Math.round((i+elapsed/limit)/clips.length*100)}%`;await new Promise(r=>setTimeout(r,35));if(remaining<=0)break}while(performance.now()-start<limit);if(el.tagName==='VIDEO')el.pause()}if(recorder){let done=new Promise((resolve,reject)=>{recorder.onstop=resolve;recorder.onerror=()=>reject(Error('Registrazione non riuscita'))});recorder.stop();await done;if(!chunks.length)throw Error('Il browser non ha prodotto un video.');download(new Blob(chunks,{type:recorder.mimeType}),`R3ELio-${Date.now()}.webm`)}status.textContent=failed.length?`Completato, ma ${failed.length} clip non sono risultate leggibili.`:'Completato. Il file resta sul dispositivo.'}catch(err){status.textContent='Problema: '+err.message;alert(err.message)}finally{if(recorder?.state==='recording')recorder.stop();stream?.getTracks().forEach(t=>t.stop());state.exporting=false;if($('#play'))$('#play').disabled=false;if($('#export'))$('#export').disabled=false}}
+let cap=Math.max(3,Math.round(state.duration/1.65));let videos=arr.filter(m=>m.kind==='video'),photos=arr.filter(m=>m.kind!=='video');let ranked=[];while((videos.length||photos.length)&&ranked.length<cap){if(videos.length)ranked.push(videos.shift());if(photos.length&&ranked.length<cap)ranked.push(photos.shift());if(videos.length&&ranked.length<cap)ranked.push(videos.shift())}return {clips:ranked,problem:''}}
+function renderStudio(el){let trips=state.trips;let active=trips.find(x=>x.id===state.studioTrip)||trips[0];if(active)state.studioTrip=active.id;el.innerHTML=`<section class="hero"><div class="eyebrow">YOUR CREATIVE SPACE</div><h1>Studio<span class="highlight">.</span></h1><p class="muted">Trasforma i ricordi in un breve montaggio verticale. Nessun video viene inviato a un server.</p></section>${!trips.length?`<div class="empty">Prima crea un viaggio e importa delle fotografie. <br><br><button class="btn" id="go-home">Vai ai viaggi</button></div>`:`<div class="studio-layout"><div class="card"><h2>Crea il tuo Reel</h2><div class="field"><label>Viaggio</label><select id="studio-trip">${trips.map(t=>`<option value="${esc(t.id)}" ${active?.id===t.id?'selected':''}>${esc(t.name)} · ${t.year}</option>`).join('')}</select></div><div class="field"><label>Modalità</label><div class="chips"><button class="chip ${state.mode==='surprise'?'active':''}" data-mode="surprise">✧ Stupiscimi</button><button class="chip ${state.mode==='custom'?'active':''}" data-mode="custom">☷ Personalizza</button></div></div><div class="field"><label>Durata · ${state.duration} secondi</label><input id="duration" type="range" min="10" max="60" step="5" value="${state.duration}"></div>${state.mode==='custom'?`<div class="field"><label>Descrivi il tuo Reel (ricerca per etichette e nomi, non chat AI)</label><textarea id="query" placeholder="Es. tempio, spiaggia, tramonto...">${esc(state.query)}</textarea></div>`:''}<button class="btn" id="generate">✧ Prepara montaggio</button><p class="hint">Montaggio ritmato con tagli variabili e preferenza per i video. Puoi cambiare ordine, durata e spezzone di partenza. Non è ancora riconoscimento visivo AI.</p><div id="sequence-list"></div></div><div><div class="preview"><canvas id="reel-canvas" width="540" height="960" aria-label="Anteprima reel"></canvas></div><div class="toolbar"><button class="btn secondary" id="play" disabled>▶ Anteprima</button><button class="btn" id="export" disabled>↓ Esporta video</button></div><div class="renderstatus" id="render-status">Prepara un montaggio per visualizzare l'anteprima.</div><p class="notice warning">Esportazione locale sperimentale: viene scelto MP4 quando Safari lo supporta, altrimenti WebM. Alcuni iPhone non supportano la registrazione del canvas: anteprima e download potrebbero avere risultati diversi. L'audio originale non è incluso.</p></div></div>`}`;if(!trips.length){$('#go-home').onclick=()=>go();return}$('#studio-trip').onchange=e=>{state.studioTrip=e.target.value;state.sequence=[];render()};el.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{state.mode=b.dataset.mode;render()});$('#duration').oninput=e=>{state.duration=+e.target.value;$('#duration').previousElementSibling.textContent='Durata · '+state.duration+' secondi';};$('#duration').onchange=()=>render();$('#query')?.addEventListener('input',e=>state.query=e.target.value);$('#generate').onclick=()=>{let r=selectClips(state.studioTrip,state.mode,state.query);state.sequence=buildEdit(r.clips,state.duration);if(r.problem){alert(r.problem);return}if(!r.clips.length){alert('Importa prima foto o video nel viaggio.');return}updateSequence();showPoster()};$('#play').onclick=()=>playSequence(false);$('#export').onclick=()=>playSequence(true);showPoster();updateSequence()}
+function buildEdit(items,duration){
+  if(!items.length)return [];
+  const weights=items.map((m,i)=>m.kind==='video'?(i%4===0?1.8:1.45):(i%4===0?1.15:.75));
+  const sum=weights.reduce((a,b)=>a+b,0);
+  return items.map((m,i)=>({...m,clipDuration:Math.round(duration*weights[i]/sum*10)/10,startAt:0}));
+}
+function fitSequenceDuration(){
+  const total=state.sequence.reduce((n,m)=>n+m.clipDuration,0);
+  if(total<=0)return;
+  state.sequence.forEach(m=>m.clipDuration=Math.max(.35,Math.round(m.clipDuration*state.duration/total*10)/10));
+}
+function updateSequence(){
+  let target=$('#sequence-list');if(!target)return;
+  target.innerHTML=state.sequence.length?`<h3 style="margin-top:22px">✂️ Montaggio modificabile · ${state.sequence.length} clip</h3><p class="hint">⬆️⬇️ Cambia ordine · −/+ durata · ↪ cambia punto iniziale del video · × rimuovi. Durata totale: ${state.sequence.reduce((s,x)=>s+x.clipDuration,0).toFixed(1)} s</p>${state.sequence.map((m,i)=>`<div class="edit-clip"><div class="clip-thumb">${m.kind==='image'?`<img src="${objectURL(m)}" alt="">`:'🎥'}</div><div class="clip-details"><strong>${i+1}. ${esc((m.note||m.name).slice(0,32))}</strong><small>${m.kind==='video'?'Video':'Foto'} · ${m.clipDuration.toFixed(1)} s${m.startAt?' · da '+m.startAt.toFixed(1)+' s':''}</small><div class="clip-buttons"><button data-edit="up" data-i="${i}" aria-label="Sposta su">↑</button><button data-edit="down" data-i="${i}" aria-label="Sposta giù">↓</button><button data-edit="short" data-i="${i}">−0,5s</button><button data-edit="long" data-i="${i}">+0,5s</button>${m.kind==='video'?`<button data-edit="seek" data-i="${i}">↪ +2s</button>`:''}<button data-edit="remove" data-i="${i}" aria-label="Elimina clip">×</button></div></div></div>`).join('')}`:'';
+  target.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{
+    const i=Number(b.dataset.i),op=b.dataset.edit,m=state.sequence[i];if(!m)return;
+    if(op==='up'&&i>0)[state.sequence[i-1],state.sequence[i]]=[state.sequence[i],state.sequence[i-1]];
+    if(op==='down'&&i<state.sequence.length-1)[state.sequence[i+1],state.sequence[i]]=[state.sequence[i],state.sequence[i+1]];
+    if(op==='short')m.clipDuration=Math.max(.5,Math.round((m.clipDuration-.5)*10)/10);
+    if(op==='long')m.clipDuration=Math.min(12,Math.round((m.clipDuration+.5)*10)/10);
+    if(op==='seek')m.startAt=(m.startAt||0)+2;
+    if(op==='remove')state.sequence.splice(i,1);
+    updateSequence();showPoster();
+  });
+  let can=state.sequence.length>0;$('#play').disabled=!can;$('#export').disabled=!can;
+}
+function drawFrame(ctx,mediaObj,text,sub,progress=0,opacity=1){
+  const c=ctx.canvas,w=c.width,h=c.height;
+  ctx.fillStyle='#10222a';ctx.fillRect(0,0,w,h);
+  if(mediaObj&&(mediaObj.tagName==='IMG'?mediaObj.complete&&mediaObj.naturalWidth>0:mediaObj.readyState>=2)){
+    const iw=mediaObj.videoWidth||mediaObj.naturalWidth,ih=mediaObj.videoHeight||mediaObj.naturalHeight;
+    if(iw&&ih){
+      const scale=Math.max(w/iw,h/ih)*(mediaObj.tagName==='IMG'?(1.015+progress*.055):1.005);
+      const dw=iw*scale,dh=ih*scale;
+      ctx.save();ctx.globalAlpha=Math.max(.05,opacity);ctx.drawImage(mediaObj,(w-dw)/2,(h-dh)/2,dw,dh);ctx.restore();
+    }
+  }
+  const grd=ctx.createLinearGradient(0,h*.7,0,h);grd.addColorStop(0,'#0000');grd.addColorStop(1,'#0009');
+  ctx.fillStyle=grd;ctx.fillRect(0,h*.7,w,h*.3);
+  if(text){ctx.textAlign='center';ctx.fillStyle='#f6fcf3';ctx.font='700 32px system-ui';ctx.fillText(text.slice(0,24),w/2,h-105);ctx.font='21px system-ui';ctx.fillStyle='#d6e9cf';ctx.fillText(sub.slice(0,38),w/2,h-65)}
+}
+async function mediaElement(m){
+  const u=objectURL(m);let el;
+  if(m.kind==='video'){
+    el=document.createElement('video');el.muted=true;el.defaultMuted=true;el.playsInline=true;el.setAttribute('playsinline','');el.preload='auto';el.src=u;
+    await new Promise((resolve,reject)=>{
+      if(el.readyState>=2)return resolve();
+      let timeout=setTimeout(()=>finish(Error('Timeout caricamento video')),18000);
+      function finish(err){clearTimeout(timeout);el.removeEventListener('loadeddata',ok);el.removeEventListener('canplay',ok);el.removeEventListener('error',bad);err?reject(err):resolve()}
+      const ok=()=>finish(),bad=()=>finish(Error('Video non decodificabile'));
+      el.addEventListener('loadeddata',ok);el.addEventListener('canplay',ok);el.addEventListener('error',bad);el.load();
+    });
+    const dur=Number.isFinite(el.duration)?el.duration:0;
+    if(dur>1&&m.startAt){let offset=m.startAt%(Math.max(.5,dur-.5));try{el.currentTime=offset;await new Promise(resolve=>{if(el.readyState>=3)return resolve();let timer=setTimeout(resolve,2500);el.addEventListener('seeked',()=>{clearTimeout(timer);resolve()},{once:true})})}catch{}}
+  }else{el=new Image();el.src=u;await el.decode()}
+  return el;
+}
+async function showPoster(){
+  const c=$('#reel-canvas');if(!c)return;const ctx=c.getContext('2d');ctx.fillStyle='#203b40';ctx.fillRect(0,0,c.width,c.height);
+  if(!state.sequence.length){drawFrame(ctx,null,'R3ELIO','Your memories in motion');return}
+  const token=++state.previewToken;
+  try{const x=await mediaElement(state.sequence[0]);if(token!==state.previewToken)return;drawFrame(ctx,x,'R3ELio.',state.sequence[0].note||'I tuoi ricordi');if(x.tagName==='VIDEO')x.pause()}
+  catch{if(token===state.previewToken)drawFrame(ctx,null,'R3ELio.','Anteprima non disponibile')}
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function playSequence(exporting){
+  if(state.exporting||!state.sequence.length)return;
+  const c=$('#reel-canvas');if(!c)return;
+  const ctx=c.getContext('2d'),status=$('#render-status'),clips=state.sequence.map(x=>({...x}));
+  let stream=null,recorder=null,chunks=[],mime='',failed=[];
+  state.exporting=true;$('#play').disabled=true;$('#export').disabled=true;
+  try{
+    if(exporting){
+      if(!c.captureStream||!window.MediaRecorder)throw Error('Questo Safari non supporta la registrazione video da canvas. Si può usare l’anteprima, ma per esportare servirà un metodo alternativo.');
+      mime=['video/mp4;codecs="avc1.42E01E"','video/mp4','video/webm;codecs=vp8','video/webm'].find(x=>MediaRecorder.isTypeSupported(x));
+      if(!mime)throw Error('Nessun formato di esportazione supportato da questo browser.');
+      stream=c.captureStream(30);
+      recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:4500000});
+      recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
+      recorder.start(250);
+    }
+    const total=clips.reduce((s,x)=>s+x.clipDuration,0);let passed=0;
+    for(let i=0;i<clips.length;i++){
+      const m=clips[i];let el;
+      try{el=await mediaElement(m);if(el.tagName==='VIDEO')await el.play()}
+      catch(err){failed.push(m.name);passed+=m.clipDuration;continue}
+      const limit=m.clipDuration*1000,start=performance.now();let elapsed=0;
+      do{
+        elapsed=performance.now()-start;
+        let progress=Math.min(1,elapsed/limit);
+        // Ingresso/uscita morbidi. A metà clip nessuna dissolvenza: l'immagine rimane nitida.
+        let fade=Math.min(1,elapsed/140,(limit-elapsed)/170);
+        let title=(i===0||i===clips.length-1)?'R3ELio.':'';
+        drawFrame(ctx,el,title,title?(m.note||'I tuoi ricordi'):'',progress,Math.max(0,fade));
+        status.textContent=`${exporting?'Esportazione':'Anteprima'}: scena ${i+1}/${clips.length} · ${Math.round((passed+Math.min(m.clipDuration,elapsed/1000))/total*100)}%`;
+        await sleep(33);
+      }while(elapsed<limit&&state.exporting);
+      if(el.tagName==='VIDEO'){el.pause();el.removeAttribute('src');el.load()}
+      passed+=m.clipDuration;
+    }
+    if(recorder){
+      await sleep(200);
+      let finished=new Promise((resolve,reject)=>{recorder.onstop=resolve;recorder.onerror=()=>reject(Error('Registrazione interrotta'))});
+      recorder.stop();await finished;
+      if(!chunks.length)throw Error('Nessun dato video generato.');
+      const actualType=recorder.mimeType||mime,isMP4=actualType.includes('mp4');
+      download(new Blob(chunks,{type:actualType}),`R3ELio-${Date.now()}.${isMP4?'mp4':'webm'}`);
+      status.textContent=`Video ${isMP4?'MP4':'WebM'} creato. Controlla se si apre correttamente in File. ${failed.length?failed.length+' clip saltate.':''}`;
+    }else status.textContent=failed.length?`Anteprima completata, ma ${failed.length} clip non leggibili nel montaggio.`:'Anteprima completata.';
+  }catch(err){status.textContent='Problema: '+err.message;alert(err.message)}
+  finally{if(recorder?.state==='recording'){try{recorder.stop()}catch{}}stream?.getTracks().forEach(t=>t.stop());state.exporting=false;if($('#play'))$('#play').disabled=!state.sequence.length;if($('#export'))$('#export').disabled=!state.sequence.length}
+}
 function download(blob,name){let u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),20000)}
 $('#close-modal').onclick=closeModal;$('#modal').addEventListener('click',e=>{if(e.target===$('#modal'))closeModal()});$('#back').onclick=()=>state.trip?go('home',state.year):go();$('#info').onclick=()=>go('settings');document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>go(b.dataset.tab));
 (async()=>{try{state.db=await openDB();await refresh()}catch(err){$('#content').innerHTML=`<div class="empty"><h2>Archivio locale non disponibile</h2><p>Il browser non permette IndexedDB o è in modalità privata/restrittiva. Prova su Safari normale e controlla lo spazio disponibile.</p><p>${esc(err.message)}</p></div>`}})();

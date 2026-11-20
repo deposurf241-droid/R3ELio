@@ -1,0 +1,1 @@
+Librerie di Firebase caricate dal CDN Google. Nessun upload media nel codice. Il sito GitHub Pages e il suo codice sono pubblici. Non crittografa IndexedDB. Prima testa con contenuti non personali. Nessuna AI semantica implementata.
